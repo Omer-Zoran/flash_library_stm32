@@ -124,7 +124,7 @@ flash_lib_status_t flash_init(uint32_t size)
   return FLASH_LIB_OK;
 }
 
-flash_lib_status_t flash_write(const void *data, size_t data_length)
+flash_lib_status_t flash_write(const void *data, size_t data_len)
 {
 
   const uint8_t *src = (const uint8_t *)data;
@@ -132,18 +132,18 @@ flash_lib_status_t flash_write(const void *data, size_t data_length)
   HAL_StatusTypeDef st;
 
   if (context.size == 0U)                  { return FLASH_LIB_ERR_NOT_INIT; }
-  if ((data == NULL) || (data_length == 0U) ||
-      (data_length > context.size))        { return FLASH_LIB_ERR_PARAM; }
+  if ((data == NULL) || (data_len == 0U) ||
+      (data_len > context.size))        { return FLASH_LIB_ERR_PARAM; }
 
   HAL_FLASH_Unlock(); // enable writing to the flash
   FLASH_LIB_CLEAR_ERRORS();
 
   st = HAL_FLASHEx_Erase(&context.erase_init, &page_error);
 
-  for(uint32_t i = 0; (st == HAL_OK) && (i < data_length); i += FLASH_LIB_WRITE_UNIT)
+  for(uint32_t i = 0; (st == HAL_OK) && (i < data_len); i += FLASH_LIB_WRITE_UNIT)
   {
     uint32_t unit[FLASH_LIB_WRITE_UNIT / 4U];      /* uint32_t: H7 HAL reads it as words */
-    uint32_t bytes_to_write = (data_length - i) >= FLASH_LIB_WRITE_UNIT ? FLASH_LIB_WRITE_UNIT : (data_length - i);
+    uint32_t bytes_to_write = (data_len - i) >= FLASH_LIB_WRITE_UNIT ? FLASH_LIB_WRITE_UNIT : (data_len - i);
     memset(unit, 0xFF, sizeof(unit));               /* pad the last unit like erased flash */
     memcpy(unit, src + i, bytes_to_write);
     st = program_unit(context.flash_data_start + FLASH_LIB_HDR_SIZE + i, unit);
@@ -166,7 +166,7 @@ flash_lib_status_t flash_write(const void *data, size_t data_length)
   return st == HAL_OK ? FLASH_LIB_OK : FLASH_LIB_ERR_HAL;
 }
 
-flash_lib_status_t flash_read(void *buffer, size_t bytes_n)
+flash_lib_status_t flash_read(void *buffer, size_t buffer_len)
 {
 
   if (context.size == 0U)
@@ -174,7 +174,7 @@ flash_lib_status_t flash_read(void *buffer, size_t bytes_n)
     return FLASH_LIB_ERR_NOT_INIT;
   }
 
-  if ((buffer == NULL) || (bytes_n == 0U) || (bytes_n > context.size))
+  if ((buffer == NULL) || (buffer_len == 0U) || (buffer_len > context.size))
   {
     return FLASH_LIB_ERR_PARAM;
   }
@@ -184,7 +184,7 @@ flash_lib_status_t flash_read(void *buffer, size_t bytes_n)
     return FLASH_LIB_EMPTY;            /* new chip, or save was cut short */
   }
 
-  memcpy(buffer, (const void *)(context.flash_data_start + FLASH_LIB_HDR_SIZE), bytes_n);
+  memcpy(buffer, (const void *)(context.flash_data_start + FLASH_LIB_HDR_SIZE), buffer_len);
 
   return FLASH_LIB_OK;
 }

@@ -143,8 +143,8 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
 
 ```c
 flash_lib_status_t flash_init(uint32_t size);
-flash_lib_status_t flash_write(const void *data, size_t data_length);
-flash_lib_status_t flash_read(void *buffer, size_t bytes_n);
+flash_lib_status_t flash_write(const void *data, size_t data_len);
+flash_lib_status_t flash_read(void *buffer, size_t buffer_len);
 ```
 
 | Function | What it does |
@@ -166,7 +166,7 @@ flash_lib_status_t flash_read(void *buffer, size_t bytes_n);
 
 ## Example
 
-Save a configuration struct and read it back:
+A configuration struct used by both examples:
 
 ```c
 #include "flash.h"
@@ -177,24 +177,44 @@ typedef struct
     char     last_name[16];
     uint32_t sn;
 } configs_t;
+```
 
-configs_t myConfig =
+Call `flash_init` once at boot, before any read or write:
+
+```c
+flash_init(sizeof(configs_t));
+```
+
+### Write
+
+```c
+configs_t myConfigWrite =
 {
     .name      = "John",
     .last_name = "Doe",
     .sn        = 1234567
 };
 
+flash_lib_status_t status = flash_write(&myConfigWrite, sizeof(myConfigWrite));
+if (status != FLASH_LIB_OK)
+{
+    /* FLASH_LIB_ERR_HAL: erase/program failed; FLASH_LIB_ERR_PARAM: bad size */
+}
+```
+
+### Read
+
+```c
 configs_t myConfigRead = {0};
 
-void setup(void)
+flash_lib_status_t status = flash_read(&myConfigRead, sizeof(myConfigRead));
+if (status == FLASH_LIB_EMPTY)
 {
-    volatile flash_lib_status_t status;   /* volatile: visible in debugger */
-
-    status = flash_init(sizeof(myConfig));
-    status = flash_write(&myConfig, sizeof(myConfig));
-    status = flash_read(&myConfigRead, sizeof(myConfigRead));
-    /* expect: status == FLASH_LIB_OK, myConfigRead == myConfig */
+    /* nothing saved yet (new chip) or the last save was cut short: use defaults */
+}
+else if (status == FLASH_LIB_OK)
+{
+    /* myConfigRead holds the saved data */
 }
 ```
 
