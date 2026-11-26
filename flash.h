@@ -11,7 +11,7 @@ typedef enum
     FLASH_LIB_ERR_PARAM,     /* NULL buf, len 0, or offset+len > size          */
     FLASH_LIB_ERR_NOT_INIT,  /* flash_lib_init() not called / failed           */
     FLASH_LIB_ERR_NO_SPACE,  /* requested size does not fit FLASH_DATA         */
-    FLASH_LIB_ERR_LAYOUT,    /* not dual-bank, or FLASH_DATA not in Bank 2     */
+    FLASH_LIB_ERR_LAYOUT,    /* FLASH_DATA does not start on a page boundary   */
     FLASH_LIB_ERR_HAL        /* erase/program/verify failed                    */
 } flash_lib_status_t;
 
