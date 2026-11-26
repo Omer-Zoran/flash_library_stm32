@@ -30,9 +30,9 @@ internal flash, so it survives power-off and reset.
 | STM32F3 | 2 KB page | 8 B | page address | F303 |
 | STM32H7 | **128 KB sector** (H74x/H75x/H72x/H73x), 8 KB sector (H7A3/H7B0) | 32 B (16 B on H7A3/H7B0) | sector number + bank | H743 (dual bank), H723 (single bank), H7A3 |
 
-The family is detected at compile time from the CubeMX defines; any other
-family stops the build with
-`#error "flash_lib: this STM32 family is not supported"`.
+The family is detected at compile time: `flash.c` includes the HAL header it
+finds in your include path. Any other family stops the build with
+`#error "flash_lib: no supported STM32 HAL found in the include path"`.
 
 "Compile-checked" means `flash.c` builds with `-Wall -Wextra` and no warnings
 against that family's ST HAL. Test on your board before you rely on it.
@@ -120,6 +120,7 @@ For another chip or size:
 
 ### 2. Add the library to the build
 
+Copy `flash.c` and `flash.h` into your project (here: `Drivers/flash_lib/`).
 In the root `CMakeLists.txt`:
 
 ```cmake
@@ -143,7 +144,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
 ```c
 flash_lib_status_t flash_init(uint32_t size);
 flash_lib_status_t flash_write(const void *data, size_t data_length);
-flash_lib_status_t flash_read(void *buffer, size_t buffer_length);
+flash_lib_status_t flash_read(void *buffer, size_t bytes_n);
 ```
 
 | Function | What it does |
@@ -158,9 +159,9 @@ flash_lib_status_t flash_read(void *buffer, size_t buffer_length);
 |---|---|
 | `FLASH_LIB_OK` | Done |
 | `FLASH_LIB_EMPTY` | `read`: nothing saved yet (new chip), or the last save was cut short by power loss |
-| `FLASH_LIB_ERR_PARAM` | `NULL` pointer, length 0, or length > `size` from `init` |
+| `FLASH_LIB_ERR_PARAM` | `NULL` pointer, length 0, or length > `size` from `init`; in `init`: `size` is 0 or does not fit in `FLASH_DATA` |
 | `FLASH_LIB_ERR_NOT_INIT` | `flash_init()` was not called, or it failed |
-| `FLASH_LIB_ERR_LAYOUT` | `init`: `FLASH_DATA` does not start on a page boundary — fix the linker script |
+| `FLASH_LIB_ERR_LAYOUT` | `init`: `FLASH_DATA` does not start on a page (or H7 sector) boundary — fix the linker script |
 | `FLASH_LIB_ERR_HAL` | Flash erase or program failed |
 
 ## Example
@@ -238,7 +239,7 @@ If power is lost during steps 1–2, `MAGIC` is missing, and the next
 
 ## Notes and limits
 
-- **Do not save often.** Each page survives about 10,000 erases. Save when a
+- **Do not save often.** Each page (or sector) survives about 10,000 erases. Save when a
   setting changes, not in a loop and not on every boot.
 - **Blocking.** `flash_write` takes tens of milliseconds (one page erase is
   about 20–40 ms, depending on the chip). Do not call it from an interrupt — it
@@ -257,13 +258,14 @@ If power is lost during steps 1–2, `MAGIC` is missing, and the next
 - **Dual-bank chips: keep the factory bank mode.** On dual-bank chips
   (e.g. G47x/G48x, G0B1, L47x) the page and bank math assume dual-bank mode,
   the factory default. If the bank-mode option bit is changed (`DBANK` on G4,
-  `DUAL_BANK` on G0, `DUALBANK` on L4), pages change size and the library
-  erases the wrong area. Check in STM32CubeProgrammer → Option Bytes.
+  `DUAL_BANK` on G0, `DUALBANK` on L4), the page or bank layout changes and the
+  library erases the wrong area. Check in STM32CubeProgrammer → Option Bytes.
+  (H7 dual-bank chips have no such option.)
 - **Survives firmware updates.** Flashing new firmware with ST-LINK normally
-  erases only the pages it writes, so `FLASH_DATA` is kept. A **full chip
+  erases only the pages (sectors) it writes, so `FLASH_DATA` is kept. A **full chip
   erase** in STM32CubeProgrammer wipes it.
-- **Known limit — ECC lock-up.** Flash stores an error-check code (ECC) with
-  every write unit. If power is lost in the exact moment `MAGIC` itself is
+- **Known limit — ECC lock-up** (G0, G4, L4, C0, WB, H7; F0/F3 have no ECC).
+  Flash stores an error-check code (ECC) with every write unit. If power is lost in the exact moment `MAGIC` itself is
   being written, that unit is half-written and reading it triggers an NMI (on
   H7: a BusFault); the default CubeMX handler loops forever. (A cut during the
   *data* is safe: `MAGIC` is missing, so `flash_read` never reads the broken
