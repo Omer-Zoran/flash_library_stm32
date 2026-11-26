@@ -120,7 +120,7 @@ flash_lib_status_t flash_read(void *buffer, size_t bytes_n)
     return FLASH_LIB_ERR_NOT_INIT; 
   }
 
-  if ((buffer == NULL) || (buffer_length == 0U) || (buffer_length > context.size))
+  if ((buffer == NULL) || (bytes_n == 0U) || (bytes_n > context.size))
   {
     return FLASH_LIB_ERR_PARAM; 
   }
@@ -130,9 +130,7 @@ flash_lib_status_t flash_read(void *buffer, size_t bytes_n)
     return FLASH_LIB_EMPTY;            /* new chip, or save was cut short */
   }
 
-  size_t flash_data_size = context.flash_data_end - context.flash_data_start;
-  size_t bytes_to_read = (bytes_n > flash_data_size) ? flash_data_size : bytes_n
-  memcpy(buffer, (const void *)(context.flash_data_start + FLASH_LIB_HDR_SIZE), bytes_to_read);
+  memcpy(buffer, (const void *)(context.flash_data_start + FLASH_LIB_HDR_SIZE), bytes_n);
 
   return FLASH_LIB_OK;
 }

@@ -152,7 +152,7 @@ Save a configuration struct and read it back:
 
 typedef struct
 {
-    char     name[16];      /* store text as arrays, NOT char* (see notes) */
+    char     name[16];
     char     last_name[16];
     uint32_t sn;
 } configs_t;
@@ -223,9 +223,6 @@ If power is lost during steps 1–2, `MAGIC` is missing, and the next
 - **Blocking.** `flash_write` takes tens of milliseconds (one page erase is
   about 20–40 ms, depending on the chip). Do not call it from an interrupt — it
   waits on `HAL_GetTick()` and would hang.
-- **Text: use `char name[16]`, not `char *name`.** A pointer stores only an
-  address, not the text. After a firmware update that address points to
-  garbage.
 - **Changing the struct layout** (adding/removing fields) makes old saved data
   wrong. Read it as empty or handle versions yourself.
 - **Dual-bank chips: keep the factory bank mode.** On dual-bank chips

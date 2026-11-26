@@ -18,6 +18,6 @@ typedef enum
 
 flash_lib_status_t flash_init(uint32_t size);
 flash_lib_status_t flash_write(const void *data, size_t data_length);
-flash_lib_status_t flash_read(void *buffer, size_t buffer_length);
+flash_lib_status_t flash_read(void *buffer, size_t bytes_n);
 
 #endif /* FLASH_H */
