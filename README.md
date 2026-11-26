@@ -19,30 +19,37 @@ internal flash, so it survives power-off and reset.
 
 ## Supported families
 
-| Family | Page size | Erase by | Compile-checked on |
-|---|---|---|---|
-| STM32G4 | 2 KB | page number + bank | G473 (dual bank), G431 (single bank) |
-| STM32G0 | 2 KB | page number + bank | G071 (single bank), G0B1 (dual bank) |
-| STM32L4 | 2 KB | page number + bank | L432 (single bank), L476 (dual bank) |
-| STM32C0 | 2 KB | page number | C031 |
-| STM32WB | 4 KB | page number | WB55 |
-| STM32F0 | 1 or 2 KB (see datasheet) | page address | F072 |
-| STM32F3 | 2 KB | page address | F303 |
+| Family | Erase unit | Write unit | Erase by | Compile-checked on |
+|---|---|---|---|---|
+| STM32G4 | 2 KB page | 8 B | page number + bank | G473 (dual bank), G431 (single bank) |
+| STM32G0 | 2 KB page | 8 B | page number + bank | G071 (single bank), G0B1 (dual bank) |
+| STM32L4 | 2 KB page | 8 B | page number + bank | L432 (single bank), L476 (dual bank) |
+| STM32C0 | 2 KB page | 8 B | page number | C031 |
+| STM32WB | 4 KB page | 8 B | page number | WB55 |
+| STM32F0 | 1 or 2 KB page (see datasheet) | 8 B | page address | F072 |
+| STM32F3 | 2 KB page | 8 B | page address | F303 |
+| STM32H7 | **128 KB sector** (H74x/H75x/H72x/H73x), 8 KB sector (H7A3/H7B0) | 32 B (16 B on H7A3/H7B0) | sector number + bank | H743 (dual bank), H723 (single bank), H7A3 |
 
-All families write 8 bytes per step. The family is detected at compile time
-from the CubeMX defines; any other family stops the build with
+The family is detected at compile time from the CubeMX defines; any other
+family stops the build with
 `#error "flash_lib: this STM32 family is not supported"`.
 
 "Compile-checked" means `flash.c` builds with `-Wall -Wextra` and no warnings
 against that family's ST HAL. Test on your board before you rely on it.
 
-Not supported yet: F2/F4/F7/H7 (flash is split into large sectors, not pages)
-and U5/H5 (16-byte write unit).
+Not supported:
+
+- **STM32H750** (and other H7 with a single 128 KB sector): the program uses
+  the only sector, so the build stops with an `#error`.
+- F2/F4/F7 (sectors of different sizes) and U5/H5 (16-byte write unit) — not
+  yet.
 
 ## Requirements
 
-- An STM32CubeMX project: the library includes `main.h`, which pulls in the
-  HAL of your chip.
+- The ST HAL of your chip in the include path (any STM32CubeMX project has
+  it). `flash.c` finds the right `stm32xxxx_hal.h` by itself with
+  `__has_include` (GCC 5+ / Clang; for other compilers, replace that block
+  with a plain `#include` of your HAL header).
 - The HAL FLASH driver enabled (`HAL_FLASH_MODULE_ENABLED` in
   `stm32xxxx_hal_conf.h`; CubeMX enables it by default).
 
@@ -82,9 +89,10 @@ Why:
 
 For another chip or size:
 
-- `FLASH_DATA` `ORIGIN` and `LENGTH` must be **multiples of the page size**
-  (table above). `flash_init` returns `FLASH_LIB_ERR_LAYOUT` if the start is not
-  page-aligned, because erasing would also wipe the code before it.
+- `FLASH_DATA` `ORIGIN` and `LENGTH` must be **multiples of the erase unit**
+  (page, or sector on H7 — table above). `flash_init` returns
+  `FLASH_LIB_ERR_LAYOUT` if the start is not aligned, because erasing would
+  also wipe the code before it.
 - `FLASH_DATA` end = end of flash = `0x08000000 + flash size`.
   Shrink `FLASH` by the same amount you give `FLASH_DATA`.
 - Example, 64 KB STM32G071, 4 KB of data: `FLASH LENGTH = 60K`,
@@ -92,6 +100,18 @@ For another chip or size:
 - **STM32WB:** the top of flash holds the wireless (BLE) stack of the second
   core. Put `FLASH_DATA` **below** the stack start (option byte `SFSA` in
   STM32CubeProgrammer), not at the very end of flash.
+- **STM32H7 (H74x/H75x/H72x/H73x):** the smallest erase is a 128 KB sector, so
+  `FLASH_DATA` must be at least **128K**, even for a few bytes. Example for a
+  2 MB STM32H743 (last sector of Bank 2):
+
+  ```ld
+  FLASH (rx)       : ORIGIN = 0x08000000, LENGTH = 1920K   /* was 2048K */
+  FLASH_DATA (r)   : ORIGIN = 0x081E0000, LENGTH = 128K
+  ```
+
+  On H7A3/H7B0 sectors are 8 KB, so `FLASH_DATA` can be 8K.
+- **STM32H7 dual-core (H745/H747/H755/H757):** the Cortex-M4 program usually
+  lives in Bank 2. Make sure `FLASH_DATA` does not overlap it.
 
 > **CubeMX warning:** regenerating code from the `.ioc` may overwrite the
 > linker script. After every regenerate, check that the changes above are still
@@ -128,7 +148,7 @@ flash_lib_status_t flash_read(void *buffer, size_t buffer_length);
 
 | Function | What it does |
 |---|---|
-| `flash_init(size)` | Call once at boot. `size` = the maximum number of bytes you will store. Max = `FLASH_DATA` length − 8 bytes. |
+| `flash_init(size)` | Call once at boot. `size` = the maximum number of bytes you will store. Max = `FLASH_DATA` length − one write unit (8 B; 32 or 16 B on H7). |
 | `flash_write(data, len)` | Erases the area and saves `len` bytes. `len` must be ≤ `size`. |
 | `flash_read(buf, len)` | Copies `len` bytes from flash into `buf`. Returns `FLASH_LIB_EMPTY` if nothing was saved yet. |
 
@@ -204,13 +224,13 @@ flash_write(&config, sizeof(config));
 ```
 FLASH_DATA (_flash_data_start)
 ┌──────────────┬───────────────────────────────┐
-│ MAGIC (8 B)  │ your data (size bytes)        │
+│ MAGIC        │ your data (size bytes)        │
 └──────────────┴───────────────────────────────┘
-  written LAST
+  one write unit (8 B; 32 or 16 B on H7), written LAST
 ```
 
-1. `flash_write` erases the needed pages.
-2. Writes your data, 8 bytes at a time.
+1. `flash_write` erases the needed pages (or sectors on H7).
+2. Writes your data, one write unit at a time.
 3. Writes `MAGIC` last. Only then is the save "complete".
 
 If power is lost during steps 1–2, `MAGIC` is missing, and the next
@@ -223,6 +243,15 @@ If power is lost during steps 1–2, `MAGIC` is missing, and the next
 - **Blocking.** `flash_write` takes tens of milliseconds (one page erase is
   about 20–40 ms, depending on the chip). Do not call it from an interrupt — it
   waits on `HAL_GetTick()` and would hang.
+- **STM32H7: erasing a 128 KB sector takes about 1–2 seconds.** If you use a
+  watchdog (IWDG), make its timeout longer than that, or the board resets in
+  the middle of a save.
+- **STM32H7 supply voltage.** The erase uses `FLASH_VOLTAGE_RANGE_3`
+  (2.7–3.6 V supply). For a board below 2.7 V, change it in
+  `set_erase_location()` in `flash.c`. (H7A3/H7B0 do not use this setting.)
+- **STM32H7 data cache.** After a save, `flash_write` invalidates the D-cache
+  for the data area, so `flash_read` returns the new data, not an old cached
+  copy.
 - **Changing the struct layout** (adding/removing fields) makes old saved data
   wrong. Read it as empty or handle versions yourself.
 - **Dual-bank chips: keep the factory bank mode.** On dual-bank chips
@@ -234,8 +263,8 @@ If power is lost during steps 1–2, `MAGIC` is missing, and the next
   erases only the pages it writes, so `FLASH_DATA` is kept. A **full chip
   erase** in STM32CubeProgrammer wipes it.
 - **Known limit — ECC lock-up.** Flash stores an error-check code (ECC) with
-  every 8 bytes. If power is lost in the exact moment `MAGIC` itself is being
-  written, that word is half-written and reading it triggers an NMI; the
-  default CubeMX `NMI_Handler` loops forever. (A cut during the *data* is safe:
-  `MAGIC` is missing, so `flash_read` never reads the broken data.) Very rare,
-  but not yet handled by this library.
+  every write unit. If power is lost in the exact moment `MAGIC` itself is
+  being written, that unit is half-written and reading it triggers an NMI (on
+  H7: a BusFault); the default CubeMX handler loops forever. (A cut during the
+  *data* is safe: `MAGIC` is missing, so `flash_read` never reads the broken
+  data.) Very rare, but not yet handled by this library.
